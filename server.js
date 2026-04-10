@@ -21,13 +21,15 @@ cloudinary.config({
 
 console.log('Cloudinary configured with cloud name:', process.env.CLOUDINARY_CLOUD_NAME);
 
-// Configure multer storage for PDFs
+// Configure multer storage for PDFs - USING UNSIGNED PRESET
 const pdfStorage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
         folder: 'choir_sheets',
         allowed_formats: ['pdf', 'jpg', 'jpeg', 'png'],
-        resource_type: 'auto'
+        resource_type: 'auto',
+        upload_preset: 'choir_public',  // ← USING YOUR NEW UNSIGNED PRESET
+        access_mode: 'public'
     }
 });
 
@@ -37,7 +39,9 @@ const audioStorage = new CloudinaryStorage({
     params: {
         folder: 'choir_audio',
         allowed_formats: ['mp3', 'm4a', 'wav', 'ogg'],
-        resource_type: 'video'
+        resource_type: 'video',
+        upload_preset: 'choir_public',  // ← USING YOUR NEW UNSIGNED PRESET
+        access_mode: 'public'
     }
 });
 
