@@ -2,12 +2,35 @@ require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
+const cloudinary = require('cloudinary').v2;
+const multer = require('multer');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// ============ CLOUDINARY CONFIGURATION ============
+// You need to add these credentials. Get them from your Cloudinary Dashboard
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'YOUR_CLOUD_NAME_HERE',
+    api_key: process.env.CLOUDINARY_API_KEY || 'YOUR_API_KEY_HERE',
+    api_secret: process.env.CLOUDINARY_API_SECRET || 'YOUR_API_SECRET_HERE'
+});
+
+// Configure multer storage for Cloudinary
+const storage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'choir_sheets',
+        allowed_formats: ['pdf', 'jpg', 'jpeg', 'png'],
+        resource_type: 'auto'
+    }
+});
+
+const upload = multer({ storage: storage });
 
 // PostgreSQL connection
 const pool = new Pool({
@@ -43,6 +66,8 @@ const createTable = async () => {
 
 createTable();
 
+// ============ EXISTING ROUTES ============
+
 // GET all songs
 app.get('/api/songs', async (req, res) => {
     try {
@@ -76,7 +101,53 @@ app.get('/api/songs/:slug', async (req, res) => {
     }
 });
 
-// POST new song
+// ============ NEW: UPLOAD PDF TO CLOUDINARY ============
+app.post('/api/upload/pdf', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
+        // Return the Cloudinary URL
+        res.json({ 
+            url: req.file.path,
+            public_id: req.file.filename,
+            message: 'File uploaded successfully' 
+        });
+    } catch (error) {
+        console.error('Upload error:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// ============ NEW: UPLOAD AUDIO TO CLOUDINARY ============
+const audioStorage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'choir_audio',
+        allowed_formats: ['mp3', 'm4a', 'wav', 'ogg'],
+        resource_type: 'video'  // Cloudinary treats audio as video type
+    }
+});
+
+const audioUpload = multer({ storage: audioStorage });
+
+app.post('/api/upload/audio', audioUpload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
+        res.json({ 
+            url: req.file.path,
+            public_id: req.file.filename,
+            message: 'Audio uploaded successfully' 
+        });
+    } catch (error) {
+        console.error('Upload error:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// POST new song (updated to handle Cloudinary URLs)
 app.post('/api/songs', async (req, res) => {
     const { slug, title, composer, category, language, description, whenToSing, pdfUrl, audioUrl } = req.body;
     
@@ -108,7 +179,7 @@ app.delete('/api/songs/:slug', async (req, res) => {
 
 // Test route
 app.get('/', (req, res) => {
-    res.json({ message: 'Choir Archive API is running with PostgreSQL' });
+    res.json({ message: 'Choir Archive API is running with PostgreSQL and Cloudinary' });
 });
 
 const PORT = process.env.PORT || 5000;
