@@ -12,16 +12,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ============ CLOUDINARY CONFIGURATION ============
-// You need to add these credentials. Get them from your Cloudinary Dashboard
+// Cloudinary configuration
 cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'YOUR_CLOUD_NAME_HERE',
-    api_key: process.env.CLOUDINARY_API_KEY || 'YOUR_API_KEY_HERE',
-    api_secret: process.env.CLOUDINARY_API_SECRET || 'YOUR_API_SECRET_HERE'
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Configure multer storage for Cloudinary
-const storage = new CloudinaryStorage({
+console.log('Cloudinary configured with cloud name:', process.env.CLOUDINARY_CLOUD_NAME);
+
+// Configure multer storage for PDFs
+const pdfStorage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
         folder: 'choir_sheets',
@@ -30,7 +31,18 @@ const storage = new CloudinaryStorage({
     }
 });
 
-const upload = multer({ storage: storage });
+// Configure multer storage for audio
+const audioStorage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'choir_audio',
+        allowed_formats: ['mp3', 'm4a', 'wav', 'ogg'],
+        resource_type: 'video'
+    }
+});
+
+const uploadPDF = multer({ storage: pdfStorage });
+const uploadAudio = multer({ storage: audioStorage });
 
 // PostgreSQL connection
 const pool = new Pool({
@@ -66,7 +78,7 @@ const createTable = async () => {
 
 createTable();
 
-// ============ EXISTING ROUTES ============
+// ============ API ROUTES ============
 
 // GET all songs
 app.get('/api/songs', async (req, res) => {
@@ -81,14 +93,14 @@ app.get('/api/songs', async (req, res) => {
 // GET songs by category
 app.get('/api/songs/category/:category', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM songs WHERE category = $1', [req.params.category]);
+        const result = await pool.query('SELECT * FROM songs WHERE category = $1 ORDER BY date_added DESC', [req.params.category]);
         res.json(result.rows);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });
 
-// GET single song
+// GET single song by slug
 app.get('/api/songs/:slug', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM songs WHERE slug = $1', [req.params.slug]);
@@ -101,17 +113,16 @@ app.get('/api/songs/:slug', async (req, res) => {
     }
 });
 
-// ============ NEW: UPLOAD PDF TO CLOUDINARY ============
-app.post('/api/upload/pdf', upload.single('file'), async (req, res) => {
+// UPLOAD PDF to Cloudinary
+app.post('/api/upload/pdf', uploadPDF.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ message: 'No file uploaded' });
         }
-        // Return the Cloudinary URL
         res.json({ 
             url: req.file.path,
             public_id: req.file.filename,
-            message: 'File uploaded successfully' 
+            message: 'PDF uploaded successfully' 
         });
     } catch (error) {
         console.error('Upload error:', error);
@@ -119,19 +130,8 @@ app.post('/api/upload/pdf', upload.single('file'), async (req, res) => {
     }
 });
 
-// ============ NEW: UPLOAD AUDIO TO CLOUDINARY ============
-const audioStorage = new CloudinaryStorage({
-    cloudinary: cloudinary,
-    params: {
-        folder: 'choir_audio',
-        allowed_formats: ['mp3', 'm4a', 'wav', 'ogg'],
-        resource_type: 'video'  // Cloudinary treats audio as video type
-    }
-});
-
-const audioUpload = multer({ storage: audioStorage });
-
-app.post('/api/upload/audio', audioUpload.single('file'), async (req, res) => {
+// UPLOAD AUDIO to Cloudinary
+app.post('/api/upload/audio', uploadAudio.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ message: 'No file uploaded' });
@@ -147,7 +147,7 @@ app.post('/api/upload/audio', audioUpload.single('file'), async (req, res) => {
     }
 });
 
-// POST new song (updated to handle Cloudinary URLs)
+// ADD new song
 app.post('/api/songs', async (req, res) => {
     const { slug, title, composer, category, language, description, whenToSing, pdfUrl, audioUrl } = req.body;
     
@@ -171,7 +171,7 @@ app.delete('/api/songs/:slug', async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ message: 'Song not found' });
         }
-        res.json({ message: 'Song deleted' });
+        res.json({ message: 'Song deleted successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -185,4 +185,6 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`Cloudinary: ${process.env.CLOUDINARY_CLOUD_NAME ? '✅ Configured' : '❌ Missing'}`);
+    console.log(`Database: ${process.env.DATABASE_URL ? '✅ Configured' : '❌ Missing'}`);
 });
